@@ -13,7 +13,15 @@
   "description": "",
   "dependencies": {
     "axios": "^1.7.9",
-    "express": "^4.21.2"
+    "body-parser": "^1.20.3",
+    "compression": "^1.8.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "p-queue": "^8.1.0",
+    "ratelimit": "^0.0.4"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

@@ -1,55 +1,60 @@
 const express = require('express');
 const axios = require('axios');
 const bodyParser = require('body-parser');
+const cors = require('cors');
+const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
+const compression = require('compression');
 
-const app = express();
-const port = 5000;
+let queue; // Definir variable para la cola de solicitudes
 
-const BASE_URL = 'http://localhost:3001';
+async function setupQueue() {
+  const { default: PQueue } = await import('p-queue');
+  queue = new PQueue({ concurrency: 50 });
+}
 
-app.use(bodyParser.json()); // application/json
+setupQueue().then(() => {
+  const app = express();
+  const port = 5000;
+  const BASE_URL = 'http://localhost:3001';
 
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader(
-    'Access-Control-Allow-Methods',
-    'OPTIONS, GET, POST, PUT, PATCH, DELETE'
-  );
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  next();
-});
+  app.use(bodyParser.json());
+  app.use(cors());
+  app.use(helmet());
+  app.use(compression());
+  app.use(morgan('combined'));
 
-// Endpoint único: Obtener productos similares con detalles
-app.get('/product/:productId/similar', async (req, res,next) => {
+  const limiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 1000,
+    message: "Demasiadas solicitudes, por favor intenta más tarde."
+  });
+
+  app.use(limiter);
+
+  app.get('/product/:productId/similar', async (req, res, next) => {
     const { productId } = req.params;
     try {
-        // Obtener los IDs de productos similares
-        const { data: similarIds } = await axios.get(BASE_URL+'/product/'+productId+'/similarids');
-        
-        // Obtener los detalles de cada producto similar
-        const productDetailsPromises = similarIds.map(id =>
-            axios.get(BASE_URL+'/product/'+id).then(response =>  response.data )
-        );
-        
-        const similarProducts = (await Promise.all(productDetailsPromises)).filter(Boolean);
-        res.json(similarProducts);
+      const { data: similarIds } = await axios.get(BASE_URL + '/product/' + productId + '/similarids').catch(() => ({ data: [] }));
+
+      const productDetailsPromises = similarIds.map(id =>
+        queue.add(() => axios.get(BASE_URL + '/product/' + id).then(response => response.data).catch(() => null))
+      );
+
+      const similarProducts = (await Promise.all(productDetailsPromises)).filter(Boolean);
+      res.json(similarProducts);
     } catch (error) {
-        if (!error.statusCode) {
-            error.statusCode = 500;
-          }
-          next(error);
+      next(error);
     }
-});
+  });
 
+  app.use((error, req, res, next) => {
+    console.error(error);
+    res.status(error.statusCode || 500).json({ message: error.message || "Error interno del servidor" });
+  });
 
-app.use((error, req, res, next) => {
-    console.log(error);
-    const status = error.statusCode || 500;
-    const message = error.message;
-    const data = error.data;
-    res.status(status).json({ message: message, data: data });
-  });  
-
-app.listen(port, () => {
-    console.log('Aggregator API running at http://localhost:'+port);
+  app.listen(port, () => {
+    console.log('Aggregator API running at http://localhost: ' + port);
+  });
 });
