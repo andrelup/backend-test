@@ -20,7 +20,7 @@ app.use((req, res, next) => {
 });
 
 // Endpoint único: Obtener productos similares con detalles
-app.get('/product/:productId/similar', async (req, res) => {
+app.get('/product/:productId/similar', async (req, res,next) => {
     const { productId } = req.params;
     try {
         // Obtener los IDs de productos similares
@@ -34,10 +34,21 @@ app.get('/product/:productId/similar', async (req, res) => {
         const similarProducts = (await Promise.all(productDetailsPromises)).filter(Boolean);
         res.json(similarProducts);
     } catch (error) {
-        console.log('Error: ' + error);
-        res.status(500).json({ error: "Error fetching similar products" });
+        if (!error.statusCode) {
+            error.statusCode = 500;
+          }
+          next(error);
     }
 });
+
+
+app.use((error, req, res, next) => {
+    console.log(error);
+    const status = error.statusCode || 500;
+    const message = error.message;
+    const data = error.data;
+    res.status(status).json({ message: message, data: data });
+  });  
 
 app.listen(port, () => {
     console.log('Aggregator API running at http://localhost:'+port);
